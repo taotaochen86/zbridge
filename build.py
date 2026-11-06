@@ -5,7 +5,8 @@
 
   python build.py            构建 dist/zbridge-<版本>.xpi 与 update.json
   python build.py --install  构建后拷进 Zotero profile 的 extensions/（需先退出 Zotero）
-  python build.py --probe    构建后跑 4 组连通性验证（Zotero 需在运行、插件需已装）
+  python build.py --probe    构建后跑 5 组连通性验证（Zotero 需在运行、插件需已装）
+                             改过令牌的话先设环境变量 ZB_TOKEN=你的令牌
 
 注意：全新的插件直接丢进 extensions/ 有可能被 Zotero 的
 extensions.autoDisableScopes 判为「侧载」而自动禁用；首次安装更稳的做法是
@@ -28,7 +29,7 @@ DIST = HERE / "dist"
 ADDON_ID = "zbridge@taotaochen86.github.io"
 ADDON_FILE = ADDON_ID + ".xpi"
 REPO = "https://github.com/taotaochen86/zbridge"
-TOKEN = "e3b6034fbdd85456f5ac6df1a4e54ef4"
+TOKEN = os.environ.get("ZB_TOKEN") or "e3b6034fbdd85456f5ac6df1a4e54ef4"
 
 
 def die(msg):
