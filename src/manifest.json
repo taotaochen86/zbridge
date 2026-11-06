@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "ZBridge",
-  "version": "10.1.4",
+  "version": "10.1.5",
   "description": "Browser-friendly local bridge for Zotero: lets local web pages (file:// add-ins, WPS/Office add-ins, local web apps) talk to Zotero without any relay process.",
   "homepage_url": "https://github.com/taotaochen86/zbridge",
   "author": "ttChen",

@@ -49,7 +49,8 @@ function load(zotero) {
   vm.runInContext(CODE, sandbox, { filename: "bootstrap.js" });
   // class / const 是词法绑定，不会挂到 sandbox 上，显式取一次
   const api = vm.runInContext(
-    "({ ExecuteEndpoint, PingEndpoint, token, queryParam, requestBody, register, unregister, serverReady," +
+    "({ ExecuteEndpoint, PingEndpoint, LegacyExecuteEndpoint, token, queryParam, queryObject," +
+    "   bearerToken, requestBody, register, unregister, serverReady," +
     "   ZB_VERSION, ZB_DEFAULT_TOKEN, ZB_MIN_ZOTERO, ZB_ENDPOINTS })",
     sandbox
   );
@@ -57,12 +58,20 @@ function load(zotero) {
 }
 
 /* 造 request 对象：style = 'url'（Zotero 7+，searchParams 是 URL 对象）或 'query'（更早的普通对象） */
-function makeRequest({ style = "url", token, body, rawBody }) {
+function makeRequest({ style = "url", token, body, rawBody, headers }) {
   const url = new URL("http://127.0.0.1:23119/zbridge/execute" + (token !== undefined ? "?token=" + encodeURIComponent(token) : ""));
   const r = { data: rawBody !== undefined ? rawBody : body };
   if (style === "url") r.searchParams = url.searchParams;
   else r.query = token !== undefined ? { token: [token] } : {};
+  if (headers) r.headers = headers;
   return r;
+}
+
+/* 兼容端点专用：令牌走 Authorization 头，不放 query */
+function legacyReq({ bearer, body, headers }) {
+  const h = headers || {};
+  if (bearer !== undefined) h.Authorization = "Bearer " + bearer;
+  return { data: body, searchParams: new URL("http://127.0.0.1:23119/debug-bridge/execute").searchParams, headers: h };
 }
 
 (async function main() {
@@ -73,7 +82,7 @@ function makeRequest({ style = "url", token, body, rawBody }) {
     check("ZB_VERSION 与 manifest.version 一致", api.ZB_VERSION === mf.version, api.ZB_VERSION + " vs " + mf.version);
     check("版本号是 x.y.z 三段式", /^\d+\.\d+\.\d+$/.test(api.ZB_VERSION), api.ZB_VERSION);
     check("minZotero 声明为 7.0", api.ZB_MIN_ZOTERO === "7.0", api.ZB_MIN_ZOTERO);
-    check("两个端点路径", api.ZB_ENDPOINTS.join(",") === "/zbridge/execute,/zbridge/ping", api.ZB_ENDPOINTS.join(","));
+    check("三个端点路径", api.ZB_ENDPOINTS.join(",") === "/zbridge/execute,/zbridge/ping,/debug-bridge/execute", api.ZB_ENDPOINTS.join(","));
     check("strict_max_version 不设上限", mf.applications.zotero.strict_max_version === "*",
       String(mf.applications.zotero.strict_max_version));
     check("strict_min_version 为 7.0", mf.applications.zotero.strict_min_version === "7.0",
@@ -153,6 +162,62 @@ function makeRequest({ style = "url", token, body, rawBody }) {
     check("旧 request 形态也能鉴权通过", r[0] === 200 && r[2] === '"old"', JSON.stringify(r));
   }
 
+  console.log("=== 5.5 debug-bridge 兼容端点 ===");
+  {
+    const z = makeZotero();
+    z.Prefs.__set("extensions.zotero.zbridge.token", "T0K3N");
+    // 旧令牌故意设成别的值：兼容端点必须只认 zbridge 的，不能认它
+    z.Prefs.__set("extensions.zotero.debug-bridge.token", "CTT");
+    const api = load(z);
+    const ep = new api.LegacyExecuteEndpoint();
+
+    check("allowRequestsFromUnsafeWebContent 已开（否则带 Origin 会被断连）",
+      ep.allowRequestsFromUnsafeWebContent === true);
+    check("只接受 POST", ep.supportedMethods.join(",") === "POST", ep.supportedMethods.join(","));
+
+    let r = await ep.init(legacyReq({ body: "return 1" }));
+    check("无 Authorization → 401 bearer token required",
+      r[0] === 401 && r[2] === "bearer token required", JSON.stringify(r));
+
+    r = await ep.init(legacyReq({ bearer: "WRONG", body: "return 1" }));
+    check("错令牌 → 401 invalid bearer token",
+      r[0] === 401 && r[2] === "invalid bearer token", JSON.stringify(r));
+
+    r = await ep.init(legacyReq({ bearer: "CTT", body: "return 1" }));
+    check("旧 debug-bridge 令牌不再被接受", r[0] === 401, JSON.stringify(r));
+
+    r = await ep.init(legacyReq({ bearer: "T0K3N", body: "return 1+1" }));
+    check("正确令牌 → 201/2", r[0] === 201 && r[2] === "2", JSON.stringify(r));
+    check("响应带 ACAO *", r[1]["Access-Control-Allow-Origin"] === "*", JSON.stringify(r[1]));
+
+    r = await ep.init(legacyReq({ bearer: "T0K3N", body: "return JSON.stringify({a:1})" }));
+    check("字符串返回值再套一层 JSON（与原版一致）", r[0] === 201 && r[2] === '"{\\"a\\":1}"', r[2]);
+
+    r = await ep.init(legacyReq({ bearer: "T0K3N", body: "return query.foo" , headers: {} }));
+    check("无 query 时形参是空对象", r[0] === 201 && r[2] === "null", r[2]);
+
+    const withQuery = legacyReq({ bearer: "T0K3N", body: "return query.foo" });
+    withQuery.searchParams = new URL("http://127.0.0.1:23119/debug-bridge/execute?foo=bar").searchParams;
+    r = await ep.init(withQuery);
+    check("脚本能拿到 query 形参", r[0] === 201 && r[2] === '"bar"', r[2]);
+
+    r = await ep.init(legacyReq({ bearer: "T0K3N", body: "throw new Error('boom')" }));
+    check("脚本抛错 → 500 且文案对齐原版",
+      r[0] === 500 && /^debug-bridge failed: /.test(r[2]), String(r[0]) + " " + String(r[2]).slice(0, 40));
+
+    r = await ep.init(legacyReq({ bearer: "T0K3N", body: "   " }));
+    check("空 body → 400", r[0] === 400, JSON.stringify(r));
+
+    const lower = legacyReq({ body: "return 'ok'", headers: { authorization: "Bearer T0K3N" } });
+    r = await ep.init(lower);
+    check("小写 authorization 头也认", r[0] === 201 && r[2] === '"ok"', JSON.stringify(r));
+
+    const q = legacyReq({ body: "return 'q'" });
+    q.searchParams = new URL("http://127.0.0.1:23119/debug-bridge/execute?token=T0K3N").searchParams;
+    r = await ep.init(q);
+    check("?token= 作为兜底也认", r[0] === 201 && r[2] === '"q"', JSON.stringify(r));
+  }
+
   console.log("=== 6. ping 端点 ===");
   {
     const api = load(makeZotero());
@@ -164,7 +229,7 @@ function makeRequest({ style = "url", token, body, rawBody }) {
     check("zotero 是宿主版本", j.zotero === "10.0.7", j.zotero);
     check("返回 minZotero", j.minZotero === "7.0", j.minZotero);
     check("返回 compat 说明", typeof j.compat === "string" && j.compat.length > 0, j.compat);
-    check("返回端点列表", Array.isArray(j.endpoints) && j.endpoints.length === 2, JSON.stringify(j.endpoints));
+    check("返回端点列表", Array.isArray(j.endpoints) && j.endpoints.length === 3, JSON.stringify(j.endpoints));
   }
 
   console.log("=== 7. 注册 / 降级 ===");
@@ -173,7 +238,7 @@ function makeRequest({ style = "url", token, body, rawBody }) {
     const api = load(z);
     check("serverReady 正常为 true", api.serverReady() === true);
     check("register 返回 true", api.register() === true);
-    check("两个端点已写入", Object.keys(z.Server.Endpoints).sort().join(",") === "/zbridge/execute,/zbridge/ping",
+    check("三个端点已写入", Object.keys(z.Server.Endpoints).sort().join(",") === "/debug-bridge/execute,/zbridge/execute,/zbridge/ping",
       Object.keys(z.Server.Endpoints).join(","));
     api.unregister();
     check("unregister 清空", Object.keys(z.Server.Endpoints).length === 0);
@@ -207,7 +272,7 @@ function makeRequest({ style = "url", token, body, rawBody }) {
     const startup = vm.runInContext("startup", sandbox);
     await startup({ id: "zbridge@taotaochen86.github.io", version: api.ZB_VERSION, rootURI: "file:///x/" }, "install");
     check("startup 后端点已注册",
-      Object.keys(z.Server.Endpoints).sort().join(",") === "/zbridge/execute,/zbridge/ping",
+      Object.keys(z.Server.Endpoints).sort().join(",") === "/debug-bridge/execute,/zbridge/execute,/zbridge/ping",
       Object.keys(z.Server.Endpoints).join(","));
   }
   {
@@ -220,7 +285,7 @@ function makeRequest({ style = "url", token, body, rawBody }) {
     let threw = false;
     try { await startup({ version: "x" }, "install"); } catch (e) { threw = true; }
     check("无 initializationPromise 时 startup 不崩", threw === false);
-    check("且仍完成注册", Object.keys(z.Server.Endpoints).length === 2, String(Object.keys(z.Server.Endpoints).length));
+    check("且仍完成注册", Object.keys(z.Server.Endpoints).length === 3, String(Object.keys(z.Server.Endpoints).length));
   }
 
   console.log("\n" + pass + "/" + (pass + fail) + " 通过" + (fail ? "（" + fail + " 失败）" : ""));

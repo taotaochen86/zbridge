@@ -196,6 +196,10 @@ def probe():
         ("无令牌", ex, {"Content-Type": "text/plain", "Origin": "null"}, "return 1", "POST", 401),
         ("错令牌", ex + "?token=wrong", {"Content-Type": "text/plain", "Origin": "null"}, "return 1", "POST", 401),
         ("脚本报错应回 500", ex + "?token=" + TOKEN, {"Content-Type": "text/plain", "Origin": "null"}, "throw new Error('boom')", "POST", 500),
+        # debug-bridge 兼容端点：状态码是 201 而不是 200，令牌走 Authorization 头
+        ("兼容端点 Bearer 应回 201", base + "/debug-bridge/execute", {"Content-Type": "text/plain", "Origin": "null", "Authorization": "Bearer " + TOKEN}, "return Zotero.version", "POST", 201),
+        ("兼容端点 无令牌应回 401", base + "/debug-bridge/execute", {"Content-Type": "text/plain", "Origin": "null"}, "return 1", "POST", 401),
+        ("兼容端点 错令牌应回 401", base + "/debug-bridge/execute", {"Content-Type": "text/plain", "Origin": "null", "Authorization": "Bearer " + TOKEN + "-wrong"}, "return 1", "POST", 401),
     ]
     bad = 0
     for name, url, hdr, body, method, want in cases:

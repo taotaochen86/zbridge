@@ -25,7 +25,7 @@ if (typeof Zotero == 'undefined') {
   var Zotero
 }
 
-const ZB_VERSION = '10.1.4'
+const ZB_VERSION = '10.1.5'
 
 /* 兼容范围：Zotero 7.0 起 Zotero.Server.Endpoints 的端点契约（init 返回
    [status, headers, body]、request.searchParams、allowRequestsFromUnsafeWebContent）
@@ -35,7 +35,7 @@ const ZB_MIN_ZOTERO = '7.0'
 const ZB_COMPAT_NOTE = 'Zotero 7.0+ (verified on 10.0.7)'
 const ZB_DEFAULT_TOKEN = 'e3b6034fbdd85456f5ac6df1a4e54ef4'
 const ZB_MAX_BODY = 4 * 1024 * 1024
-const ZB_ENDPOINTS = ['/zbridge/execute', '/zbridge/ping']
+const ZB_ENDPOINTS = ['/zbridge/execute', '/zbridge/ping', '/debug-bridge/execute']
 
 function log(msg) {
   try {
@@ -87,6 +87,49 @@ function queryParam(request, name) {
   }
   catch (e) {}
   return ''
+}
+
+/* Authorization 头。原版 debug-bridge 读的就是 request.headers.Authorization；
+   代理层偶尔会改大小写，两种都试。 */
+function authHeader(request) {
+  try {
+    const h = (request && request.headers) || {}
+    const v = h.Authorization || h.authorization || ''
+    return typeof v === 'string' ? v : ''
+  }
+  catch (e) {
+    return ''
+  }
+}
+
+/* 从 "Bearer xxx" 里取令牌；没带 Bearer 前缀就返回空串（不把裸串当令牌）。 */
+function bearerToken(request) {
+  const v = authHeader(request).trim()
+  const m = /^Bearer\s+(.+)$/i.exec(v)
+  return m ? m[1].trim() : ''
+}
+
+/* 把 query 摊成普通对象。原版 debug-bridge 会把它当作 `query` 形参传给被执行的脚本，
+   有客户端依赖这个行为，兼容端点必须照样给。 */
+function queryObject(request) {
+  const out = {}
+  try {
+    if (request && request.searchParams && typeof request.searchParams.forEach === 'function') {
+      request.searchParams.forEach((v, k) => { out[k] = v })
+      return out
+    }
+  }
+  catch (e) {}
+  try {
+    if (request && request.query && typeof request.query === 'object') {
+      for (const k of Object.keys(request.query)) {
+        const v = request.query[k]
+        out[k] = Array.isArray(v) ? v[v.length - 1] : v
+      }
+    }
+  }
+  catch (e) {}
+  return out
 }
 
 /* 请求体。Zotero 7+ 是 UTF-8 字符串；个别版本 / 编码会给字节数组，一并转掉。 */
@@ -173,6 +216,63 @@ class PingEndpoint {
   }
 }
 
+/* POST /debug-bridge/execute —— 与原版 Zotero Debug Bridge 同形的兼容端点。
+ *
+ * 存在的唯一目的：让已经按原版接口写死的客户端（思源 zotero-cite 插件等）在卸掉原版
+ * 插件之后，改一个令牌值就能继续跑，不必等着客户端发新版。契约逐项对齐原版 1.2：
+ *   Authorization: Bearer <token>   必填
+ *     没有该头            → 401 'bearer token required'
+ *     令牌不匹配          → 401 'invalid bearer token'
+ *   成功                  → 201 + application/json，body = JSON.stringify(返回值)
+ *   脚本抛错              → 500 + application/text，'debug-bridge failed: …'
+ *   被执行的脚本能拿到一个 query 形参（原版就这么传，有客户端依赖）
+ *
+ * 与 /zbridge/execute 的区别只有两点：用 Authorization 头而不是 query 传令牌（浏览器侧会
+ * 触发预检，所以原版从不给浏览器用）；状态码用 201 而不是 200。
+ *
+ * 令牌只认 zbridge 的 extensions.zotero.zbridge.token，**不读** debug-bridge.token：
+ * 卸掉原版之后旧令牌就该一起作废，留着等于多开一道门。
+ */
+class LegacyExecuteEndpoint {
+  constructor() {
+    this.supportedMethods = ['POST']
+    this.supportedDataTypes = ['text/plain', 'application/json', 'application/javascript']
+    this.allowRequestsFromUnsafeWebContent = true
+    this.permitBookmarklet = false
+  }
+
+  async init(request) {
+    // 头优先；也容忍 ?token=（同一个令牌值，只是换个携带方式）
+    const found = bearerToken(request) || queryParam(request, 'token')
+    if (!found) return [401, headers('text/plain'), 'bearer token required']
+    if (found !== token()) return [401, headers('text/plain'), 'invalid bearer token']
+
+    const code = requestBody(request)
+    if (typeof code !== 'string' || !code.trim()) {
+      return [400, headers('text/plain'), 'empty body']
+    }
+    if (code.length > ZB_MAX_BODY) {
+      return [413, headers('text/plain'), 'body too large']
+    }
+
+    const start = Date.now()
+    try {
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+      const action = new AsyncFunction('query', code)
+      let result = await action(queryObject(request))
+      if (typeof result === 'undefined') result = null
+      const body = JSON.stringify(result)
+      log(`legacy exec ok (${Date.now() - start}ms, ${code.length}B)`)
+      return [201, headers(), body]
+    }
+    catch (err) {
+      log(`legacy exec failed: ${err}`)
+      return [500, headers('application/text'),
+        `debug-bridge failed: ${err}\n${err && err.stack ? err.stack : ''}`]
+    }
+  }
+}
+
 /* 端点注册机制从 Zotero 7 开始就是 Zotero.Server.Endpoints 上的一个普通对象属性。
    未来版本若改了这块，这里探测失败就只记日志、不抛异常，避免整个插件把 Zotero 启动流程带崩。 */
 function serverReady() {
@@ -193,6 +293,7 @@ function register() {
   try {
     Zotero.Server.Endpoints['/zbridge/execute'] = ExecuteEndpoint
     Zotero.Server.Endpoints['/zbridge/ping'] = PingEndpoint
+    Zotero.Server.Endpoints['/debug-bridge/execute'] = LegacyExecuteEndpoint
     log(`registered ${ZB_ENDPOINTS.join(', ')} on Zotero ${Zotero.version || '?'}`)
     return true
   }
