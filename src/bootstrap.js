@@ -15,7 +15,10 @@
  *   - 响应自带 Access-Control-Allow-Origin: *，浏览器才读得到 body。
  *   - 返回值沿用「字符串套 JSON」两层编码，方便已有客户端原样复用。
  *   - 令牌是唯一防线（ACAO:* + 任意 JS 执行 = 任何网页都能操纵 Zotero），
- *     所以默认 32 位十六进制；可用 prefs 覆盖：extensions.zbridge.token
+ *     所以默认 32 位十六进制；可用 prefs 覆盖。
+ *     注意：Zotero.Prefs.get('zbridge.token') 会自动加 extensions.zotero. 前缀，
+ *     所以真正的 pref 名是 extensions.zotero.zbridge.token（实测：写成
+ *     extensions.zbridge.token 不生效）。
  */
 
 if (typeof Zotero == 'undefined') {

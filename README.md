@@ -50,11 +50,25 @@ curl -s -X POST "http://127.0.0.1:23119/zbridge/execute?token=e3b6034fbdd85456f5
 
 ## 令牌
 
-默认令牌写在 `src/bootstrap.js` 的 `ZB_DEFAULT_TOKEN`，可用 prefs 覆盖：
+默认令牌写在 `src/bootstrap.js` 的 `ZB_DEFAULT_TOKEN`。不改代码也能覆盖，用 Zotero 的配置编辑器：
 
-```
-extensions.zbridge.token
-```
+1. Zotero → 编辑 → 设置 → 高级 → 底部「配置编辑器」→ 点「我了解风险」
+2. 搜索 `zbridge.token`
+3. 没有就点「+」新增：类型 **String**，名称填 `extensions.zotero.zbridge.token`，值填你自己的令牌（建议 ≥32 位随机串）
+4. 重启 Zotero（端点每次请求都会重新读该 pref，但配置编辑器的改动建议重启后再验证）
+
+> ⚠️ 前缀必须是 `extensions.zotero.`。
+> `Zotero.Prefs.get('zbridge.token')` 会自动补上 `extensions.zotero.`，
+> 所以真正生效的是 `extensions.zotero.zbridge.token`；写成 `extensions.zbridge.token`
+> **不生效**（2026-11-06 实测：前者 200、后者 401）。
+>
+> 也可以直接改 profile 里的 `prefs.js`，加一行：
+> ```js
+> user_pref("extensions.zotero.zbridge.token", "你的新令牌");
+> ```
+
+**改了令牌之后，客户端也要同步**，否则请求一律 401。例如 WPS 加载项
+`zotero-bridge.js` 里的 `webToken` 字段要改成同一个值。
 
 ## 安全提醒
 
