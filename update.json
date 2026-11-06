@@ -1,0 +1,13 @@
+{
+  "addons": {
+    "zbridge@taotaochen86.github.io": {
+      "updates": [
+        {
+          "version": "10.0",
+          "update_link": "https://github.com/taotaochen86/zbridge/releases/download/v10.0/zbridge-10.0.xpi",
+          "update_hash": "sha256:9ccd2aa0df4c0da3dd8fa7a4a2227ff1d90fda046bce15c94199563c324cd1bb"
+        }
+      ]
+    }
+  }
+}
