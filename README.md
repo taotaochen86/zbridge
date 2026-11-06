@@ -29,12 +29,51 @@ Zotero 10.0.7 的 `chrome/content/zotero/xpcom/server/server.js` 里：
 
 | 项 | 要求 | 怎么确认 |
 |---|---|---|
-| Zotero | 7.0 及以上（`strict_min_version` 7.0，`strict_max_version` 10.*） | Zotero 菜单「帮助 → 关于 Zotero」 |
+| Zotero | **7.0 及以上，不设上限**（`strict_min_version` 7.0，`strict_max_version` `*`）。Zotero 10.* 全系列（10.0 / 10.0.x / 10.1 / 10.5 / 10.99…）均可安装使用 | Zotero 菜单「帮助 → 关于 Zotero」 |
 | 端口 | 默认 `23119`，由 Zotero 自己的 HTTP server 提供 | 见下面第 1 步 |
 | 权限 | 普通用户即可，**不需要管理员权限** | —— |
 | 网络 | 不需要。插件完全在本机跑，不联网 | —— |
 
 ZBridge 是 Zotero 的插件，装的是 `.xpi` 文件，跟 Zotero 本体一起启动，**没有独立进程、不占额外端口**。
+
+### 0.1 支持哪些 Zotero 版本
+
+清单里写的是 `strict_min_version: "7.0"`、`strict_max_version: "*"`，也就是**7.0 以上不设上限**：
+
+| Zotero 版本 | 是否支持 | 说明 |
+|---|---|---|
+| 7.0 – 7.0.x | ✅ 可安装 | 端点契约与 10 相同 |
+| 10.0 – 10.0.x | ✅ 可安装，已实测 | 当前开发环境为 10.0.7 |
+| 10.1 / 10.2 / 10.5 / 10.9 / 10.99 … | ✅ 可安装 | 10.x 全系列共用同一套 HTTP server 与端点 API，代码里没有任何版本分支 |
+| 11 及以后 | ✅ 可安装（不设上限） | 若端点 API 变了，插件启动时会探测失败并**只写日志、不注册**，不会拖垮 Zotero 启动 |
+
+**为什么能做到跨版本**：ZBridge 只用了三样东西 —— `Zotero.Server.Endpoints` 注册表、
+端点的 `init(request)` 返回 `[status, headers, body]` 的契约、`allowRequestsFromUnsafeWebContent` 开关。
+这三样从 Zotero 7 到 10 一直没变。插件没有硬编码任何版本号判断。
+
+对旧形态也做了兜底，不是只按 10.0.7 写死：
+
+| 差异点 | 兼容做法 |
+|---|---|
+| query 参数的载体：新版本是 `request.searchParams`（URL 对象），更早是 `request.query`（普通对象） | `queryParam()` 两种都试，前者抛异常自动降级 |
+| 请求体类型：通常是 UTF-8 字符串，个别情况是字节数组 | `requestBody()` 用 `TextDecoder` 转码 |
+| `Zotero.initializationPromise` 可能不存在 | `startup()` 里判空，缺失时直接注册 |
+| `Zotero.Server.Endpoints` 可能不存在（未来大改） | `serverReady()` 先探测，不满足就返回 false 并跳过，**绝不抛异常** |
+
+**插件版本号与 Zotero 版本号无关，是插件自己的递增序号：当前 `10.1.4`。**
+每次改动（改代码、改文档、重构包）都把最后一位加一 → `10.1.5`、`10.1.6`……
+版本号只影响「Zotero 认为是新版还是旧版」，与「支持哪个 Zotero 版本」毫无关系。
+
+> 早期版本叫 `10.0`，是为了跟 Zotero 主版本对齐，结果常被误读成「只配 Zotero 10.0 用」。
+> 现在 `10.1.x` 只表示插件自身的迭代次数，Zotero 从 10.0 升到 10.5 不需要动插件版本。
+
+自查命令（Zotero 开着时）：
+
+```bash
+curl -s "http://127.0.0.1:23119/zbridge/ping"
+```
+
+返回里的 `zotero` 是你本机版本，`minZotero` 是插件要求的最低版本，`version` 是插件版本。
 
 ### 1. 先确认 Zotero 的 HTTP server 在跑
 
@@ -54,9 +93,12 @@ curl -s -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:23119/"
 
 三种来源，任选一种：
 
-- **发布页下载**：<https://github.com/taotaochen86/zbridge/releases/latest> → `zbridge-10.0.xpi`
-- **本地已构建**：直接用仓库里的 `dist/zbridge-10.0.xpi`
+- **发布页下载**：<https://github.com/taotaochen86/zbridge/releases/latest> → `zbridge-10.1.4.xpi`
+- **本地已构建**：直接用仓库里的 `dist/zbridge-10.1.4.xpi`
 - **自己构建**：`python build.py`（见文末「构建」，需要 Python 3.8+）
+
+> 文件名里的 `10.1.4` 是**插件自己的版本号，与 Zotero 版本号无关**（每次改动递增一位），
+> 不要因为它不是 `10.x` 就以为装错了。
 
 > 不要解压 xpi。它就是一个 zip 包，交给 Zotero 处理。
 
@@ -65,16 +107,16 @@ curl -s -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:23119/"
 1. 打开 Zotero → 顶部菜单 **工具 → 插件**
 2. 插件窗口右上角点 **齿轮图标** ⚙
 3. 选 **Install Plugin From File…**（中文界面：「从文件安装插件…」）
-4. 选中 `zbridge-10.0.xpi` → 打开
+4. 选中 `zbridge-10.1.4.xpi` → 打开
 5. Zotero 会弹一个确认框（提示插件未签名），点 **Install / 安装**
 6. Zotero 提示需要重启，点 **Restart Now / 立即重启**（或手动关掉 Zotero 再打开）
 
-**备选：拖拽安装。** 把 `zbridge-10.0.xpi` 直接拖到「工具 → 插件」窗口里，效果相同。
+**备选：拖拽安装。** 把 `zbridge-10.1.4.xpi` 直接拖到「工具 → 插件」窗口里，效果相同。
 
 安装成功后，插件列表里应出现一行：
 
 ```
-ZBridge  10.0
+ZBridge  10.1.4
 ```
 
 并且**是启用状态**（右侧开关为开、或没有「已禁用」标记）。如果显示为禁用，点一下开关启用，再重启 Zotero。
@@ -107,8 +149,11 @@ curl -s "http://127.0.0.1:23119/zbridge/ping"
 期望返回：
 
 ```json
-{"name":"ZBridge","version":"10.0","zotero":"10.0.7","endpoints":["/zbridge/execute","/zbridge/ping"]}
+{"name":"ZBridge","version":"10.1.4","zotero":"10.0.7","minZotero":"7.0","compat":"Zotero 7.0+ (verified on 10.0.7)","endpoints":["/zbridge/execute","/zbridge/ping"]}
 ```
+
+其中 `zotero` 是**你本机实际的 Zotero 版本**（这里以 10.0.7 举例，你的可能是 10.1、10.5…），
+`version` 是插件版本。两者无关，不要拿它们互相比对。
 
 **② 能执行 JS**（带令牌）
 
@@ -136,7 +181,8 @@ curl -s -X POST "http://127.0.0.1:23119/zbridge/execute?token=$TOKEN" \
 python build.py --probe
 ```
 
-会依次验证 ping、带 Origin 执行、无令牌 401、错令牌 401、脚本报错 500 五种情况，输出 `5/5 通过` 即正常。
+会依次验证 ping、带 Origin 执行、无令牌 401、错令牌 401、脚本报错 500，外加一条
+「本机 Zotero 版本是否落在清单声明范围内」，输出 `6/6 通过` 即正常。
 **如果你改过令牌，要先告诉它**，否则那三条带令牌的用例会 401：
 
 ```bash
@@ -157,6 +203,7 @@ $env:ZB_TOKEN="你的令牌"; python build.py --probe
 - **手动（推荐）**：重新下载新版 xpi，重复第 3 步；Zotero 会覆盖同 ID 插件，配置与令牌都保留。
 
 > Zotero 判断升级只看 `version`。版本号不涨，覆盖安装等于没升级。
+> 所以本项目约定：**每次改动都递增版本号**（`10.1.4` → `10.1.5` → …），哪怕只改了一行文档。
 
 ### 7. 卸载
 
@@ -182,7 +229,7 @@ Zotero → **工具 → 插件** → 选中 **ZBridge** → 点 **移除 / Remov
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/zbridge/ping` | 返回 `{name, version, zotero, endpoints}`，不需要令牌 |
+| GET | `/zbridge/ping` | 返回 `{name, version, zotero, minZotero, compat, endpoints}`，不需要令牌 |
 | POST | `/zbridge/execute?token=…` | body 是裸 JS（须自带 `return`），返回值 JSON 序列化 |
 
 示例：
@@ -250,12 +297,35 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST \
 
 ```bash
 python build.py             # 生成 dist/zbridge-<版本>.xpi 与 update.json（含 sha256）
-python build.py --probe     # 另跑 5 组连通性验证（Zotero 需在运行且插件已装；改过令牌要设 ZB_TOKEN）
+python build.py --bump      # 先把版本号末位 +1（manifest 与 bootstrap 同步），再构建
+python build.py --test      # 先跑离线单测（node test/unit.js，不需要 Zotero），通过才构建
+python build.py --probe     # 另跑 6 组连通性验证（Zotero 需在运行且插件已装；改过令牌要设 ZB_TOKEN）
 python build.py --install   # 拷进 Zotero profile 的 extensions/（需先退出 Zotero）
 ```
 
-`build.py` 会先校验 `src/manifest.json` 的版本号，并把 xpi 的 sha256 写进 `update.json`
-（自动更新用）。改完 `src/` 里任何文件都要重新打包，否则装进去的还是旧代码。
+**版本号约定：每次改动都递增。** 日常就一条命令：
+
+```bash
+python build.py --bump --test --probe
+```
+
+`--bump` 会把 `10.1.4` 改成 `10.1.5`，并同时写进 `src/manifest.json` 的 `version` 和
+`src/bootstrap.js` 的 `ZB_VERSION`。两处必须一致，不一致时构建会直接报错退出。
+
+`build.py` 会读 `src/manifest.json` 的版本号与兼容范围，把 xpi 的 sha256 写进 `update.json`
+（自动更新用），构建时打印一行 `兼容 Zotero 7.0 ~ 不限`。改完 `src/` 里任何文件都要重新打包，
+否则装进去的还是旧代码。
+
+### 离线单测
+
+```bash
+node test/unit.js
+```
+
+用 `vm` 造一个假 Zotero，把端点契约逐条验一遍：令牌读取（含错误前缀不生效）、
+`searchParams` 与 `query` 两种 request 形态、UTF-8 字节数组请求体、
+401/400/500 各分支、`register()` 在 `Zotero.Server` 缺失时是否安全降级、`startup` 是否完成注册。
+共 45 条断言，不需要 Zotero 在运行。
 
 ## License
 
@@ -273,7 +343,7 @@ Zotero's built-in HTTP server is friendly to native programs but puts three obst
 
 ## Why it exists
 
-In Zotero 10.0.7, `chrome/content/zotero/xpcom/server/server.js`:
+In Zotero 7–10, `chrome/content/zotero/xpcom/server/server.js` (line numbers per 10.0.7):
 
 | Lines | Behaviour |
 |---|---|
@@ -293,12 +363,51 @@ So a cross-origin request from a browser is either dropped, unreadable, or block
 
 | Item | Requirement | How to check |
 |---|---|---|
-| Zotero | 7.0 or newer (`strict_min_version` 7.0, `strict_max_version` 10.*) | Zotero menu **Help → About Zotero** |
+| Zotero | **7.0 or newer, no upper bound** (`strict_min_version` 7.0, `strict_max_version` `*`). Every Zotero 10.* release (10.0 / 10.0.x / 10.1 / 10.5 / 10.99 …) installs and works | Zotero menu **Help → About Zotero** |
 | Port | `23119` by default, served by Zotero's own HTTP server | See step 1 below |
 | Privileges | A normal user account. **Administrator rights are not needed** | — |
 | Network | None. Everything runs locally | — |
 
 ZBridge is a Zotero add-on shipped as an `.xpi`. It starts and stops with Zotero — **no separate process, no extra port**.
+
+### 0.1 Supported Zotero versions
+
+The manifest declares `strict_min_version: "7.0"` and `strict_max_version: "*"` — that is, **7.0 and up, with no upper bound**:
+
+| Zotero version | Supported | Notes |
+|---|---|---|
+| 7.0 – 7.0.x | ✅ installs | Same endpoint contract as 10 |
+| 10.0 – 10.0.x | ✅ installs, tested | Development environment is 10.0.7 |
+| 10.1 / 10.2 / 10.5 / 10.9 / 10.99 … | ✅ installs | All 10.x share the same HTTP server and endpoint API; there is not a single version branch in the code |
+| 11 and later | ✅ installs (no upper bound) | If the endpoint API ever changes, startup probes for it, logs a message and skips registration — it will not break Zotero's startup |
+
+**Why it works across versions.** ZBridge relies on exactly three things: the `Zotero.Server.Endpoints`
+registry, the `init(request)` → `[status, headers, body]` contract, and the `allowRequestsFromUnsafeWebContent`
+flag. Those three have been unchanged from Zotero 7 through 10. The add-on contains no hard-coded version checks.
+
+Older shapes are handled too, rather than assuming 10.0.7:
+
+| Difference | How it is handled |
+|---|---|
+| Query params: newer versions expose `request.searchParams` (a URL object), older ones `request.query` (a plain object) | `queryParam()` tries both, falling back automatically if the first throws |
+| Request body: normally a UTF-8 string, occasionally a byte array | `requestBody()` decodes it with `TextDecoder` |
+| `Zotero.initializationPromise` may be absent | `startup()` guards for it and registers regardless |
+| `Zotero.Server.Endpoints` may be absent (a future rewrite) | `serverReady()` probes first; if missing, registration is skipped and **nothing is thrown** |
+
+**The add-on version is not tied to the Zotero version — it is the add-on's own incrementing counter (currently `10.1.4`).**
+Every change (code, docs, rebuilt package) bumps the last digit → `10.1.5`, `10.1.6`, and so on.
+The version only tells Zotero whether this is newer or older; it says nothing about which Zotero versions are supported.
+
+> The old `10.0` was chosen to mirror Zotero's major version, which led people to read it as "only for Zotero 10.0".
+> `10.1.x` now just counts add-on iterations — Zotero going from 10.0 to 10.5 needs no add-on version change.
+
+Quick self-check (with Zotero running):
+
+```bash
+curl -s "http://127.0.0.1:23119/zbridge/ping"
+```
+
+`zotero` is your local Zotero version, `minZotero` the minimum this add-on requires, `version` the add-on version.
 
 ### 1. Make sure Zotero's HTTP server is up
 
@@ -318,9 +427,12 @@ check `extensions.zotero.httpServer.port` in the Zotero Config Editor.
 
 Pick one:
 
-- **Download a release**: <https://github.com/taotaochen86/zbridge/releases/latest> → `zbridge-10.0.xpi`
-- **Use the built artefact**: `dist/zbridge-10.0.xpi` in this repository
+- **Download a release**: <https://github.com/taotaochen86/zbridge/releases/latest> → `zbridge-10.1.4.xpi`
+- **Use the built artefact**: `dist/zbridge-10.1.4.xpi` in this repository
 - **Build it yourself**: `python build.py` (Python 3.8+, see "Building" below)
+
+> The `10.1.4` in the filename is the **add-on's own version, unrelated to the Zotero version** (bumped on every
+> change). Do not assume you grabbed the wrong file just because it does not match your Zotero version.
 
 > Do not unzip the `.xpi`. It is a zip archive, but Zotero must receive it as-is.
 
@@ -329,7 +441,7 @@ Pick one:
 1. Open Zotero → menu **Tools → Plugins**
 2. Click the **gear icon** ⚙ in the top-right corner of the Plugins window
 3. Choose **Install Plugin From File…**
-4. Select `zbridge-10.0.xpi` → Open
+4. Select `zbridge-10.1.4.xpi` → Open
 5. Zotero shows a confirmation dialog (the add-on is unsigned) → click **Install**
 6. Zotero asks to restart → click **Restart Now** (or quit Zotero completely and start it again)
 
@@ -338,7 +450,7 @@ Pick one:
 After a successful install the list shows one entry:
 
 ```
-ZBridge  10.0
+ZBridge  10.1.4
 ```
 
 It must be **enabled** (toggle on, no "disabled" marker). If it appears disabled, enable it and restart Zotero.
@@ -422,6 +534,7 @@ $env:ZB_TOKEN="your-token"; python build.py --probe
 - **Manual (recommended)**: download the new xpi and repeat step 3. Zotero replaces the add-on with the same ID; your configuration and token are preserved.
 
 > Zotero only upgrades when `version` increases. Reinstalling the same version is a no-op.
+> Project convention: **bump the version on every change** (`10.1.4` → `10.1.5` → …), even for a one-line docs edit.
 
 ### 7. Uninstalling
 
@@ -510,12 +623,31 @@ If you only use this yourself, keep the default and **do not commit your token i
 
 ```bash
 python build.py             # produces dist/zbridge-<version>.xpi and update.json (with sha256)
-python build.py --probe     # additionally runs 5 connectivity checks (Zotero running, add-on installed; set ZB_TOKEN if you changed the token)
+python build.py --bump      # bumps the last version digit (manifest + bootstrap kept in sync), then builds
+python build.py --test      # runs the offline unit tests first (node test/unit.js, no Zotero needed)
+python build.py --probe     # additionally runs 6 connectivity checks (Zotero running, add-on installed; set ZB_TOKEN if you changed the token)
 python build.py --install   # copies into the Zotero profile's extensions/ (quit Zotero first)
 ```
 
-`build.py` validates the version in `src/manifest.json` and writes the xpi's sha256 into `update.json`
-(used by the auto-updater). Rebuild after touching anything under `src/`, or you will ship stale code.
+**Convention: bump the version on every change.** In practice that is one command:
+
+```bash
+python build.py --bump --test --probe
+```
+
+`--bump` turns `10.1.4` into `10.1.5` and writes it to both `src/manifest.json` (`version`) and
+`src/bootstrap.js` (`ZB_VERSION`). If the two disagree, the build aborts instead of shipping a mismatch.
+
+### Offline unit tests
+
+```bash
+node test/unit.js
+```
+
+A fake Zotero is built with `vm`, then the endpoint contract is exercised: token lookup (including the
+wrong prefix correctly having no effect), both `searchParams` and `query` request shapes, UTF-8 byte-array
+bodies, the 401/400/500 branches, `register()` degrading safely when `Zotero.Server` is missing, and
+`startup` completing registration. 45 assertions, no running Zotero required.
 
 ## License
 

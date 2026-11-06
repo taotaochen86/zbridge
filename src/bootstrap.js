@@ -2,8 +2,8 @@
  * ZBridge — 让本机网页（如 WPS 加载项）直连 Zotero 的桥
  *
  * 为什么需要它：
- *   Zotero 自带的 HTTP server 对「浏览器来源」的请求有三道拦截（Zotero 10.0.7
- *   chrome/content/zotero/xpcom/server/server.js）：
+ *   Zotero 自带的 HTTP server 对「浏览器来源」的请求有三道拦截（行号以 10.0.7 的
+ *   chrome/content/zotero/xpcom/server/server.js 为准，7.x–10.x 各版本逻辑一致）：
  *     411-431  带 Origin 的请求在进端点前直接断连接，除非端点声明 allowRequestsFromUnsafeWebContent
  *     280-284  Access-Control-Allow-Origin 只在 origin === zotero.org 时才自动加
  *     369      OPTIONS 在进端点前短路返回、且不带 CORS 头 → 预检必挂
@@ -25,7 +25,14 @@ if (typeof Zotero == 'undefined') {
   var Zotero
 }
 
-const ZB_VERSION = '10.0'
+const ZB_VERSION = '10.1.4'
+
+/* 兼容范围：Zotero 7.0 起 Zotero.Server.Endpoints 的端点契约（init 返回
+   [status, headers, body]、request.searchParams、allowRequestsFromUnsafeWebContent）
+   就稳定下来了，Zotero 10.* 全系列沿用同一套，无需任何版本分支。
+   插件版本号（10.1.x）是独立递增的序号：每次改动都要加一，与 Zotero 版本号无关。 */
+const ZB_MIN_ZOTERO = '7.0'
+const ZB_COMPAT_NOTE = 'Zotero 7.0+ (verified on 10.0.7)'
 const ZB_DEFAULT_TOKEN = 'e3b6034fbdd85456f5ac6df1a4e54ef4'
 const ZB_MAX_BODY = 4 * 1024 * 1024
 const ZB_ENDPOINTS = ['/zbridge/execute', '/zbridge/ping']
@@ -49,13 +56,56 @@ function headers(contentType) {
   }
 }
 
+/* 令牌读取。Zotero.Prefs.get(name) 会自动补 extensions.zotero. 前缀，为了不受
+   这个规则影响，这里用第二参数 true 按「完整名」直接读，与 README 写的名字严格一致
+   （extensions.zotero.zbridge.token）。写成 extensions.zbridge.token 不会生效。 */
 function token() {
-  let v = ''
   try {
-    v = Zotero.Prefs.get('zbridge.token') || ''
+    const v = Zotero.Prefs.get('extensions.zotero.zbridge.token', true)
+    if (typeof v === 'string' && v) return v
   }
   catch (e) {}
-  return v || ZB_DEFAULT_TOKEN
+  return ZB_DEFAULT_TOKEN
+}
+
+/* 取 query 参数。Zotero 7+ 给的是 URL 对象（searchParams），
+   更早的实现给的是普通对象 { token: [...] }，两种都兜住。 */
+function queryParam(request, name) {
+  try {
+    if (request && request.searchParams && typeof request.searchParams.get === 'function') {
+      const v = request.searchParams.get(name)
+      if (v) return String(v)
+    }
+  }
+  catch (e) {}
+  try {
+    if (request && request.query && typeof request.query === 'object') {
+      const v = request.query[name]
+      if (Array.isArray(v)) return v.length ? String(v[0]) : ''
+      if (v !== undefined && v !== null) return String(v)
+    }
+  }
+  catch (e) {}
+  return ''
+}
+
+/* 请求体。Zotero 7+ 是 UTF-8 字符串；个别版本 / 编码会给字节数组，一并转掉。 */
+function requestBody(request) {
+  const d = request ? request.data : null
+  if (typeof d === 'string') return d
+  if (d === null || d === undefined) return ''
+  try {
+    if (typeof TextDecoder !== 'undefined' && (d instanceof Uint8Array || Array.isArray(d))) {
+      return new TextDecoder('utf-8').decode(d)
+    }
+  }
+  catch (e) {}
+  try {
+    return String(d)
+  }
+  catch (e) {
+    return ''
+  }
 }
 
 /* POST /zbridge/execute?token=…   body = 裸 JS，须自带 return */
@@ -68,15 +118,11 @@ class ExecuteEndpoint {
   }
 
   async init(request) {
-    let found = ''
-    try {
-      found = request.searchParams ? (request.searchParams.get('token') || '') : ''
-    }
-    catch (e) {}
+    const found = queryParam(request, 'token')
     if (!found) return [401, headers('text/plain'), 'token required']
     if (found !== token()) return [401, headers('text/plain'), 'invalid token']
 
-    let code = request.data
+    const code = requestBody(request)
     if (typeof code !== 'string' || !code.trim()) {
       return [400, headers('text/plain'), 'empty body']
     }
@@ -120,18 +166,44 @@ class PingEndpoint {
       name: 'ZBridge',
       version: ZB_VERSION,
       zotero: zv,
+      minZotero: ZB_MIN_ZOTERO,
+      compat: ZB_COMPAT_NOTE,
       endpoints: ZB_ENDPOINTS,
     })]
   }
 }
 
+/* 端点注册机制从 Zotero 7 开始就是 Zotero.Server.Endpoints 上的一个普通对象属性。
+   未来版本若改了这块，这里探测失败就只记日志、不抛异常，避免整个插件把 Zotero 启动流程带崩。 */
+function serverReady() {
+  try {
+    return !!(Zotero && Zotero.Server && Zotero.Server.Endpoints
+      && typeof Zotero.Server.Endpoints === 'object')
+  }
+  catch (e) {
+    return false
+  }
+}
+
 function register() {
-  Zotero.Server.Endpoints['/zbridge/execute'] = ExecuteEndpoint
-  Zotero.Server.Endpoints['/zbridge/ping'] = PingEndpoint
-  log(`registered ${ZB_ENDPOINTS.join(', ')}`)
+  if (!serverReady()) {
+    log('Zotero.Server.Endpoints 不可用，跳过注册；该版本不支持端点 API')
+    return false
+  }
+  try {
+    Zotero.Server.Endpoints['/zbridge/execute'] = ExecuteEndpoint
+    Zotero.Server.Endpoints['/zbridge/ping'] = PingEndpoint
+    log(`registered ${ZB_ENDPOINTS.join(', ')} on Zotero ${Zotero.version || '?'}`)
+    return true
+  }
+  catch (e) {
+    log('register failed: ' + e)
+    return false
+  }
 }
 
 function unregister() {
+  if (!serverReady()) return
   for (const path of ZB_ENDPOINTS) {
     try {
       delete Zotero.Server.Endpoints[path]
@@ -141,7 +213,7 @@ function unregister() {
 }
 
 async function startup({ id, version, rootURI }, reason) {
-  log(`startup ${version || ''} (${reason})`)
+  log(`startup v${version || '?'} (${reason || ''}) on Zotero ${Zotero.version || '?'}`)
   try {
     if (Zotero.initializationPromise) await Zotero.initializationPromise
   }

@@ -4,8 +4,10 @@
 打包 / 安装 ZBridge。
 
   python build.py            构建 dist/zbridge-<版本>.xpi 与 update.json
+  python build.py --bump     先把版本号末位 +1（manifest 与 bootstrap 同步），再构建
+  python build.py --test     先跑离线单测（不需要 Zotero），通过才构建
   python build.py --install  构建后拷进 Zotero profile 的 extensions/（需先退出 Zotero）
-  python build.py --probe    构建后跑 5 组连通性验证（Zotero 需在运行、插件需已装）
+  python build.py --probe    构建后跑 6 组连通性验证（Zotero 需在运行、插件需已装）
                              改过令牌的话先设环境变量 ZB_TOKEN=你的令牌
 
 注意：全新的插件直接丢进 extensions/ 有可能被 Zotero 的
@@ -18,6 +20,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import zipfile
@@ -41,6 +44,79 @@ def manifest():
     return json.loads((SRC / "manifest.json").read_text(encoding="utf-8"))
 
 
+def compat_range():
+    """从清单里取 (strict_min_version, strict_max_version)。"""
+    z = manifest()["applications"]["zotero"]
+    return z.get("strict_min_version", "*"), z.get("strict_max_version", "*")
+
+
+def _vtuple(v):
+    """把 '10.0.7' 拆成 (10, 0, 7)。非数字段（如 beta1）按 0 处理，够用。"""
+    out = []
+    for part in str(v).split("."):
+        digits = "".join(ch for ch in part if ch.isdigit())
+        out.append(int(digits) if digits else 0)
+    return tuple(out)
+
+
+def in_range(version, lo, hi):
+    """按 toolkit 的语义判断 version 是否落在 [lo, hi]。
+    hi 结尾的 '.*' 按前缀匹配（'10.*' 匹配 10.0~10.99），'*' 表示不设上限。"""
+    v = _vtuple(version)
+    if lo and lo != "*":
+        n = len(_vtuple(lo))
+        if v[:n] < _vtuple(lo)[:n]:
+            return False
+    if not hi or hi == "*":
+        return True
+    if hi.endswith(".*"):
+        n = len(_vtuple(hi[:-2]))
+        return v[:n] <= _vtuple(hi[:-2]) and v[0] == _vtuple(hi[:-2])[0]
+    n = len(_vtuple(hi))
+    return v[:n] <= _vtuple(hi)[:n]
+
+
+def bootstrap_version():
+    """从 bootstrap.js 里取 ZB_VERSION，用于和 manifest 比对。"""
+    m = re.search(r"const\s+ZB_VERSION\s*=\s*'([^']*)'", (SRC / "bootstrap.js").read_text(encoding="utf-8"))
+    if not m:
+        die("bootstrap.js 里找不到 ZB_VERSION")
+    return m.group(1)
+
+
+def check_versions():
+    """manifest.json 与 bootstrap.js 的版本号必须一致，否则装进去 ping 会报旧版本。"""
+    mv, bv = manifest()["version"], bootstrap_version()
+    if mv != bv:
+        die("版本号不一致：manifest.json=%s，bootstrap.js=%s。两个都要改（或用 --bump 自动同步）" % (mv, bv))
+    return mv
+
+
+def bump():
+    """把 patch 位加一并同步到两处。约定：每次改动都递增。"""
+    m = manifest()
+    old = m["version"]
+    parts = old.split(".")
+    if not parts[-1].isdigit():
+        die("版本号末位不是数字，无法自增：%s" % old)
+    parts[-1] = str(int(parts[-1]) + 1)
+    new = ".".join(parts)
+
+    m["version"] = new
+    (SRC / "manifest.json").write_text(
+        json.dumps(m, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    bs = SRC / "bootstrap.js"
+    text = bs.read_text(encoding="utf-8")
+    text2 = re.sub(r"(const\s+ZB_VERSION\s*=\s*')[^']*(')", r"\g<1>%s\g<2>" % new, text, count=1)
+    if text2 == text:
+        die("bootstrap.js 里没能替换掉 ZB_VERSION")
+    bs.write_text(text2, encoding="utf-8")
+
+    print("[ OK ] 版本 %s → %s（manifest.json / bootstrap.js 已同步）" % (old, new))
+    return new
+
+
 def profiles():
     root = Path(os.path.expanduser("~")) / "AppData" / "Roaming" / "Zotero" / "Zotero" / "Profiles"
     if not root.is_dir():
@@ -50,8 +126,8 @@ def profiles():
 
 def build():
     DIST.mkdir(parents=True, exist_ok=True)
+    ver = check_versions()
     m = manifest()
-    ver = m["version"]
     out = DIST / ("zbridge-%s.xpi" % ver)
 
     files = ["manifest.json", "bootstrap.js"]
@@ -60,8 +136,10 @@ def build():
             z.write(SRC / name, name)
 
     digest = hashlib.sha256(out.read_bytes()).hexdigest()
+    lo, hi = compat_range()
     print("[ OK ] %s  (%d 字节)" % (out, out.stat().st_size))
     print("       sha256 %s" % digest)
+    print("       兼容 Zotero %s ~ %s" % (lo, "不限" if hi == "*" else hi))
 
     # Zotero 的更新源（可选）：让已装旧版的人能自动升级
     update = {
@@ -114,7 +192,7 @@ def probe():
 
     cases = [
         ("ping（不需要令牌）", base + "/zbridge/ping", {}, None, "GET", 200),
-        ("执行 JS（Origin null + 令牌）", ex + "?token=" + TOKEN, {"Content-Type": "text/plain", "Origin": "null"}, "return JSON.stringify({v: Zotero.version})", "POST", 200),
+        ("执行 JS（Origin null + 令牌）", ex + "?token=" + TOKEN, {"Content-Type": "text/plain", "Origin": "null"}, "return Zotero.version", "POST", 200),
         ("无令牌", ex, {"Content-Type": "text/plain", "Origin": "null"}, "return 1", "POST", 401),
         ("错令牌", ex + "?token=wrong", {"Content-Type": "text/plain", "Origin": "null"}, "return 1", "POST", 401),
         ("脚本报错应回 500", ex + "?token=" + TOKEN, {"Content-Type": "text/plain", "Origin": "null"}, "throw new Error('boom')", "POST", 500),
@@ -132,7 +210,25 @@ def probe():
         print("[%s] %-28s HTTP=%d ACAO=%s %s" % (" OK " if ok else "FAIL", name, code, acao, text[:60].replace("\n", " ")))
         if not ok:
             bad += 1
-    print("\n%d/%d 通过" % (len(cases) - bad, len(cases)))
+
+    # 兼容性断言：本机实际 Zotero 版本必须落在清单声明范围内
+    lo, hi = compat_range()
+    try:
+        _, _, text = req(base + "/zbridge/ping", {}, None, "GET")
+        info = json.loads(text)
+        zv = str(info.get("zotero") or "")
+        ok = bool(zv) and in_range(zv, lo, hi)
+        print("[%s] %-28s 本机 Zotero %s，清单声明 %s~%s"
+              % (" OK " if ok else "FAIL", "版本落在声明范围", zv or "?",
+                 lo, "不限" if hi == "*" else hi))
+    except Exception as e:
+        print("[FAIL] %-28s %s" % ("版本落在声明范围", e))
+        ok = False
+    if not ok:
+        bad += 1
+
+    total = len(cases) + 1
+    print("\n%d/%d 通过" % (total - bad, total))
     sys.exit(1 if bad else 0)
 
 
@@ -140,7 +236,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--install", action="store_true")
     ap.add_argument("--probe", action="store_true")
+    ap.add_argument("--test", action="store_true", help="构建前先跑离线单测（node test/unit.js，不需要 Zotero）")
+    ap.add_argument("--bump", action="store_true", help="先把版本号末位加一（manifest + bootstrap 同步），再构建")
     a = ap.parse_args()
+
+    if a.bump:
+        bump()
+
+    if a.test:
+        import subprocess
+        r = subprocess.run(["node", str(HERE / "test" / "unit.js")], cwd=str(HERE))
+        if r.returncode != 0:
+            die("离线单测未通过，已中止构建")
+
     xpi = build()
     if a.install:
         install(xpi)
