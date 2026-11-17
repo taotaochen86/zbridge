@@ -32,7 +32,7 @@ DIST = HERE / "dist"
 ADDON_ID = "zbridge@taotaochen86.github.io"
 ADDON_FILE = ADDON_ID + ".xpi"
 REPO = "https://github.com/taotaochen86/zbridge"
-TOKEN = os.environ.get("ZB_TOKEN") or "e3b6034fbdd85456f5ac6df1a4e54ef4"
+TOKEN = os.environ.get("ZB_TOKEN") or "a26c69b1050dbdea9bb5d141d109aeaa"
 
 
 def die(msg):

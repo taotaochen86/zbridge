@@ -25,7 +25,7 @@ if (typeof Zotero == 'undefined') {
   var Zotero
 }
 
-const ZB_VERSION = '10.1.5'
+const ZB_VERSION = '10.1.6'
 
 /* 兼容范围：Zotero 7.0 起 Zotero.Server.Endpoints 的端点契约（init 返回
    [status, headers, body]、request.searchParams、allowRequestsFromUnsafeWebContent）
@@ -33,7 +33,7 @@ const ZB_VERSION = '10.1.5'
    插件版本号（10.1.x）是独立递增的序号：每次改动都要加一，与 Zotero 版本号无关。 */
 const ZB_MIN_ZOTERO = '7.0'
 const ZB_COMPAT_NOTE = 'Zotero 7.0+ (verified on 10.0.7)'
-const ZB_DEFAULT_TOKEN = 'e3b6034fbdd85456f5ac6df1a4e54ef4'
+const ZB_DEFAULT_TOKEN = 'a26c69b1050dbdea9bb5d141d109aeaa'
 const ZB_MAX_BODY = 4 * 1024 * 1024
 const ZB_ENDPOINTS = ['/zbridge/execute', '/zbridge/ping', '/debug-bridge/execute']
 
