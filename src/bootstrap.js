@@ -25,7 +25,7 @@ if (typeof Zotero == 'undefined') {
   var Zotero
 }
 
-const ZB_VERSION = '10.1.6'
+const ZB_VERSION = '10.1.7'
 
 /* 兼容范围：Zotero 7.0 起 Zotero.Server.Endpoints 的端点契约（init 返回
    [status, headers, body]、request.searchParams、allowRequestsFromUnsafeWebContent）

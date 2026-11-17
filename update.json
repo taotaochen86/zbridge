@@ -3,9 +3,9 @@
     "zbridge@taotaochen86.github.io": {
       "updates": [
         {
-          "version": "10.1.6",
-          "update_link": "https://github.com/taotaochen86/zbridge/releases/download/v10.1.6/zbridge-10.1.6.xpi",
-          "update_hash": "sha256:050875e03208d51139073128767d105ec383f8cace5e9b03876c173b9dd0d4ee"
+          "version": "10.1.7",
+          "update_link": "https://github.com/taotaochen86/zbridge/releases/download/v10.1.7/zbridge-10.1.7.xpi",
+          "update_hash": "sha256:a8ec41ff679b20b62e23ba387a8138e10b675d1a116d08ea165c19724e389d60"
         }
       ]
     }

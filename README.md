@@ -13,8 +13,8 @@
 | 来源 | 地址 |
 |---|---|
 | 发布页（永远指向最新版，**推荐**） | <https://github.com/taotaochen86/zbridge/releases/latest> |
-| 固定直链格式 | `https://github.com/taotaochen86/zbridge/releases/download/v<版本号>/zbridge-<版本号>.xpi`<br>例：`.../v10.1.6/zbridge-10.1.6.xpi` |
-| 本机已构建 | 仓库里的 `dist/zbridge-10.1.6.xpi` |
+| 固定直链格式 | `https://github.com/taotaochen86/zbridge/releases/download/v<版本号>/zbridge-<版本号>.xpi`<br>例：`.../v10.1.7/zbridge-10.1.7.xpi` |
+| 本机已构建 | 仓库里的 `dist/zbridge-10.1.7.xpi` |
 | 自己构建 | `python build.py`（需 Python 3.8+ 与 Node，见文末「构建」） |
 
 > 国内访问 GitHub 常常不通。发布页打不开就用 `dist/` 里已构建好的那个，或挂代理再下。
@@ -24,13 +24,13 @@
 
 1. 打开 Zotero → 顶部菜单 **工具 → 插件**
 2. 插件窗口右上角 **齿轮 ⚙ → Install Plugin From File…**（中文界面：「从文件安装插件…」）
-3. 选中 `zbridge-10.1.6.xpi` → 打开
+3. 选中 `zbridge-10.1.7.xpi` → 打开
 4. 弹「插件未签名」确认框 → 点 **Install / 安装**
 5. 提示需要重启 → 点 **Restart Now / 立即重启**
 
 **第 3 步：确认插件是启用状态**
 
-「工具 → 插件」列表里应有 `ZBridge 10.1.6`，右侧开关为**开**。显示「已禁用」就点一下开关再重启。
+「工具 → 插件」列表里应有 `ZBridge 10.1.7`，右侧开关为**开**。显示「已禁用」就点一下开关再重启。
 
 **第 4 步：验证端点活着**
 
@@ -43,7 +43,7 @@ curl -s http://127.0.0.1:23119/zbridge/ping
 看到下面这行就算装好了（`zotero` 字段是你本机版本，`endpoints` 应有 3 条）：
 
 ```json
-{"name":"ZBridge","version":"10.1.6","zotero":"10.0.7","minZotero":"7.0","compat":"Zotero 7.0+ (verified on 10.0.7)","endpoints":["/zbridge/execute","/zbridge/ping","/debug-bridge/execute"]}
+{"name":"ZBridge","version":"10.1.7","zotero":"10.0.7","minZotero":"7.0","compat":"Zotero 7.0+ (verified on 10.0.7)","endpoints":["/zbridge/execute","/zbridge/ping","/debug-bridge/execute"]}
 ```
 
 返回 404 → 插件没启用或没重启；连接被拒 → Zotero 没开。对照文末「安装故障排查」。
@@ -104,7 +104,7 @@ ZBridge 是 Zotero 的插件，装的是 `.xpi` 文件，跟 Zotero 本体一起
 | `Zotero.initializationPromise` 可能不存在 | `startup()` 里判空，缺失时直接注册 |
 | `Zotero.Server.Endpoints` 可能不存在（未来大改） | `serverReady()` 先探测，不满足就返回 false 并跳过，**绝不抛异常** |
 
-**插件版本号与 Zotero 版本号无关，是插件自己的递增序号：当前 `10.1.6`。**
+**插件版本号与 Zotero 版本号无关，是插件自己的递增序号：当前 `10.1.7`。**
 每次改动（改代码、改文档、重构包）都把最后一位加一 → `10.1.5`、`10.1.6`……
 版本号只影响「Zotero 认为是新版还是旧版」，与「支持哪个 Zotero 版本」毫无关系。
 
@@ -137,11 +137,11 @@ curl -s -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:23119/"
 
 三种来源，任选一种：
 
-- **发布页下载**：<https://github.com/taotaochen86/zbridge/releases/latest> → `zbridge-10.1.6.xpi`
-- **本地已构建**：直接用仓库里的 `dist/zbridge-10.1.6.xpi`
+- **发布页下载**：<https://github.com/taotaochen86/zbridge/releases/latest> → `zbridge-10.1.7.xpi`
+- **本地已构建**：直接用仓库里的 `dist/zbridge-10.1.7.xpi`
 - **自己构建**：`python build.py`（见文末「构建」，需要 Python 3.8+）
 
-> 文件名里的 `10.1.6` 是**插件自己的版本号，与 Zotero 版本号无关**（每次改动递增一位），
+> 文件名里的 `10.1.7` 是**插件自己的版本号，与 Zotero 版本号无关**（每次改动递增一位），
 > 不要因为它不是 `10.x` 就以为装错了。
 
 > 不要解压 xpi。它就是一个 zip 包，交给 Zotero 处理。
@@ -151,16 +151,16 @@ curl -s -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:23119/"
 1. 打开 Zotero → 顶部菜单 **工具 → 插件**
 2. 插件窗口右上角点 **齿轮图标** ⚙
 3. 选 **Install Plugin From File…**（中文界面：「从文件安装插件…」）
-4. 选中 `zbridge-10.1.6.xpi` → 打开
+4. 选中 `zbridge-10.1.7.xpi` → 打开
 5. Zotero 会弹一个确认框（提示插件未签名），点 **Install / 安装**
 6. Zotero 提示需要重启，点 **Restart Now / 立即重启**（或手动关掉 Zotero 再打开）
 
-**备选：拖拽安装。** 把 `zbridge-10.1.6.xpi` 直接拖到「工具 → 插件」窗口里，效果相同。
+**备选：拖拽安装。** 把 `zbridge-10.1.7.xpi` 直接拖到「工具 → 插件」窗口里，效果相同。
 
 安装成功后，插件列表里应出现一行：
 
 ```
-ZBridge  10.1.6
+ZBridge  10.1.7
 ```
 
 并且**是启用状态**（右侧开关为开、或没有「已禁用」标记）。如果显示为禁用，点一下开关启用，再重启 Zotero。
@@ -193,7 +193,7 @@ curl -s "http://127.0.0.1:23119/zbridge/ping"
 期望返回：
 
 ```json
-{"name":"ZBridge","version":"10.1.6","zotero":"10.0.7","minZotero":"7.0","compat":"Zotero 7.0+ (verified on 10.0.7)","endpoints":["/zbridge/execute","/zbridge/ping","/debug-bridge/execute"]}
+{"name":"ZBridge","version":"10.1.7","zotero":"10.0.7","minZotero":"7.0","compat":"Zotero 7.0+ (verified on 10.0.7)","endpoints":["/zbridge/execute","/zbridge/ping","/debug-bridge/execute"]}
 ```
 
 其中 `zotero` 是**你本机实际的 Zotero 版本**（这里以 10.0.7 举例，你的可能是 10.1、10.5…），
@@ -323,7 +323,7 @@ ZBridge 现在完整接管了 Debug Bridge 的 `/debug-bridge/execute`，可以�
 
 ### 迁移五步
 
-1. **先装 ZBridge 10.1.6**（按上面「30 秒版」），确认 `/zbridge/ping` 已返回 3 条端点。
+1. **先装 ZBridge 10.1.7**（按上面「30 秒版」），确认 `/zbridge/ping` 已返回 3 条端点。
 2. **把令牌统一到 zbridge**。两种写法，任选：
    ```js
    // 方式 A：Zotero 里「工具 → 开发者 → Run JavaScript」执行一行（立即生效，无需重启）
@@ -476,8 +476,8 @@ Four steps to a working bridge. For the reasoning behind each one, read "Install
 | Source | Where |
 |---|---|
 | Releases page (always the newest, **recommended**) | <https://github.com/taotaochen86/zbridge/releases/latest> |
-| Fixed direct-link pattern | `https://github.com/taotaochen86/zbridge/releases/download/v<version>/zbridge-<version>.xpi`<br>e.g. `.../v10.1.6/zbridge-10.1.6.xpi` |
-| Already built here | `dist/zbridge-10.1.6.xpi` in this repo |
+| Fixed direct-link pattern | `https://github.com/taotaochen86/zbridge/releases/download/v<version>/zbridge-<version>.xpi`<br>e.g. `.../v10.1.7/zbridge-10.1.7.xpi` |
+| Already built here | `dist/zbridge-10.1.7.xpi` in this repo |
 | Build it yourself | `python build.py` (Python 3.8+ and Node, see "Building") |
 
 > Do not unzip the `.xpi` — it is a zip archive, but Zotero must receive it as-is.
@@ -486,13 +486,13 @@ Four steps to a working bridge. For the reasoning behind each one, read "Install
 
 1. Zotero → menu **Tools → Plugins**
 2. Gear icon ⚙ (top-right) → **Install Plugin From File…**
-3. Select `zbridge-10.1.6.xpi` → Open
+3. Select `zbridge-10.1.7.xpi` → Open
 4. Confirm the unsigned-add-on warning → **Install**
 5. Click **Restart Now**
 
 **Step 3 — make sure it is enabled**
 
-The Plugins list should show `ZBridge 10.1.6` with the toggle **on**. If it says "disabled", toggle it on and restart.
+The Plugins list should show `ZBridge 10.1.7` with the toggle **on**. If it says "disabled", toggle it on and restart.
 
 **Step 4 — check the endpoint is alive**
 
@@ -505,7 +505,7 @@ curl -s http://127.0.0.1:23119/zbridge/ping
 You should get this back (`zotero` is your local version, `endpoints` must list 3 paths):
 
 ```json
-{"name":"ZBridge","version":"10.1.6","zotero":"10.0.7","minZotero":"7.0","compat":"Zotero 7.0+ (verified on 10.0.7)","endpoints":["/zbridge/execute","/zbridge/ping","/debug-bridge/execute"]}
+{"name":"ZBridge","version":"10.1.7","zotero":"10.0.7","minZotero":"7.0","compat":"Zotero 7.0+ (verified on 10.0.7)","endpoints":["/zbridge/execute","/zbridge/ping","/debug-bridge/execute"]}
 ```
 
 404 → add-on not enabled or Zotero not restarted. Connection refused → Zotero is not running. See "Troubleshooting" below.
@@ -565,7 +565,7 @@ Older shapes are handled too, rather than assuming 10.0.7:
 | `Zotero.initializationPromise` may be absent | `startup()` guards for it and registers regardless |
 | `Zotero.Server.Endpoints` may be absent (a future rewrite) | `serverReady()` probes first; if missing, registration is skipped and **nothing is thrown** |
 
-**The add-on version is not tied to the Zotero version — it is the add-on's own incrementing counter (currently `10.1.6`).**
+**The add-on version is not tied to the Zotero version — it is the add-on's own incrementing counter (currently `10.1.7`).**
 Every change (code, docs, rebuilt package) bumps the last digit → `10.1.5`, `10.1.6`, and so on.
 The version only tells Zotero whether this is newer or older; it says nothing about which Zotero versions are supported.
 
@@ -598,11 +598,11 @@ check `extensions.zotero.httpServer.port` in the Zotero Config Editor.
 
 Pick one:
 
-- **Download a release**: <https://github.com/taotaochen86/zbridge/releases/latest> → `zbridge-10.1.6.xpi`
-- **Use the built artefact**: `dist/zbridge-10.1.6.xpi` in this repository
+- **Download a release**: <https://github.com/taotaochen86/zbridge/releases/latest> → `zbridge-10.1.7.xpi`
+- **Use the built artefact**: `dist/zbridge-10.1.7.xpi` in this repository
 - **Build it yourself**: `python build.py` (Python 3.8+, see "Building" below)
 
-> The `10.1.6` in the filename is the **add-on's own version, unrelated to the Zotero version** (bumped on every
+> The `10.1.7` in the filename is the **add-on's own version, unrelated to the Zotero version** (bumped on every
 > change). Do not assume you grabbed the wrong file just because it does not match your Zotero version.
 
 > Do not unzip the `.xpi`. It is a zip archive, but Zotero must receive it as-is.
@@ -612,16 +612,16 @@ Pick one:
 1. Open Zotero → menu **Tools → Plugins**
 2. Click the **gear icon** ⚙ in the top-right corner of the Plugins window
 3. Choose **Install Plugin From File…**
-4. Select `zbridge-10.1.6.xpi` → Open
+4. Select `zbridge-10.1.7.xpi` → Open
 5. Zotero shows a confirmation dialog (the add-on is unsigned) → click **Install**
 6. Zotero asks to restart → click **Restart Now** (or quit Zotero completely and start it again)
 
-**Alternative: drag and drop.** Drop `zbridge-10.1.6.xpi` straight onto the **Tools → Plugins** window. Same result.
+**Alternative: drag and drop.** Drop `zbridge-10.1.7.xpi` straight onto the **Tools → Plugins** window. Same result.
 
 After a successful install the list shows one entry:
 
 ```
-ZBridge  10.1.6
+ZBridge  10.1.7
 ```
 
 It must be **enabled** (toggle on, no "disabled" marker). If it appears disabled, enable it and restart Zotero.
@@ -654,7 +654,7 @@ curl -s "http://127.0.0.1:23119/zbridge/ping"
 Expected:
 
 ```json
-{"name":"ZBridge","version":"10.1.6","zotero":"10.0.7","minZotero":"7.0","compat":"Zotero 7.0+ (verified on 10.0.7)","endpoints":["/zbridge/execute","/zbridge/ping","/debug-bridge/execute"]}
+{"name":"ZBridge","version":"10.1.7","zotero":"10.0.7","minZotero":"7.0","compat":"Zotero 7.0+ (verified on 10.0.7)","endpoints":["/zbridge/execute","/zbridge/ping","/debug-bridge/execute"]}
 ```
 
 **② It can execute JS** (with the token)
@@ -785,7 +785,7 @@ an `Origin` header are not dropped — browser and desktop clients share one add
 
 ### Five migration steps
 
-1. **Install ZBridge 10.1.6 first** (see "30 seconds" above) and confirm `/zbridge/ping` lists 3 endpoints.
+1. **Install ZBridge 10.1.7 first** (see "30 seconds" above) and confirm `/zbridge/ping` lists 3 endpoints.
 2. **Move the token to zbridge.** Either form:
    ```js
    // A: Zotero → Tools → Developer → Run JavaScript (takes effect immediately, no restart)
@@ -887,7 +887,7 @@ python build.py --install   # copies into the Zotero profile's extensions/ (quit
 python build.py --bump --test --probe
 ```
 
-`--bump` turns `10.1.5` into `10.1.5` and writes it to both `src/manifest.json` (`version`) and
+`--bump` turns `10.1.5` into `10.1.6` and writes it to both `src/manifest.json` (`version`) and
 `src/bootstrap.js` (`ZB_VERSION`). If the two disagree, the build aborts instead of shipping a mismatch.
 
 ### Offline unit tests
